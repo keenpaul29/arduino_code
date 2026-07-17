@@ -16,8 +16,8 @@ void loop() {
   digitalWrite(trig,HIGH);
   delayMicroseconds(2);
   digitalWrite(trig,LOW);
-  long timE=pulseIn(echo,HIGH); //
-  distance=(0.0343*timE)/2;
+  long t=pulseIn(echo,HIGH); //
+  distance=(0.0343*t)/2;
   Serial.print("Distance: ");
   Serial.print(distance);
   Serial.println(" cm");

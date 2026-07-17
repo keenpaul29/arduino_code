@@ -1,3 +1,5 @@
+// Making red and blue bulb glow simultaneously using Arduino
+
 int redPin = 3;
 int bluePin = 9;
 void setup() {
