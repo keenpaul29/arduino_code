@@ -20,7 +20,7 @@ float MicroSensor(int trigger, int echo) {
   digitalWrite(trigger, HIGH);
   delayMicroseconds(2);
   digitalWrite(trigger, LOW);
-  long t = pulseIn(echo, HIGH);
+  long t = pulseIn(echo, HIGH); //pulse
   float dist = (0.0343 * t) / 2;
   Serial.println(dist);
   return (dist==0)? MicroSensor(trigger,echo): dist;  //ternary + recursively used func to avoid printing null value
