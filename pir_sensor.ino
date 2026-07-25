@@ -21,7 +21,7 @@
  *    - Power Consumption   : Higher than PIR due to continuously driving the IR transmitter LED.
  *    - Common Applications : Line-following robots, hand sanitizer dispensers, conveyor belts.
  * =====================================================================================
- */
+ */ 
 
 const int PIR_PIN = 2;       // PIR sensor output connected to Digital Pin 2
 const int LED_PIN = 13;      // Onboard LED pin
