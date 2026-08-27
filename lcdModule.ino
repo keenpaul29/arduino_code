@@ -66,7 +66,9 @@ void setup() {
 
     // Clear any residual data stored in display RAM and set cursor to home position (0,0)
     lcd.clear();
+}
 
+void loop() {
     // Set cursor to Column 0, Row 0 (Top line)
     // Note: Coordinates are 0-indexed: setCursor(col, row)
     lcd.setCursor(0, 0);
@@ -77,15 +79,4 @@ void setup() {
     // Set cursor to Column 0, Row 1 (Bottom line)
     lcd.setCursor(0, 1);
     lcd.print("Parallel LCD");
-}
-
-void loop() {
-    // Set cursor to column 12 on row 1 to display elapsed seconds counter
-    lcd.setCursor(12, 1);
-    
-    // Print seconds elapsed since Arduino reset using built-in millis() function
-    lcd.print(millis() / 1000);
-    
-    // Delay 500ms to reduce screen flicker during rapid text updates
-    delay(500);
 }
