@@ -1,153 +1,102 @@
 /*
- * =====================================================================================
- *  8x8 LED MATRIX WITH MAX7219 DRIVER — COMPLETE DOCUMENTATION & IMPLEMENTATION
- * =====================================================================================
+ * =======================================================================================
+ * PROJECT: 8x8 LED Matrix Control using MAX7219 IC & LedControl Library
+ * =======================================================================================
  * 
- * 1. THE CORE HARDWARE & MULTIPLEXING PROBLEM:
- *    - An 8x8 LED matrix consists of 64 individual Light Emitting Diodes (8 rows x 8 cols).
- *    - Direct control requires 16 pins (8 row cathode/anode lines + 8 column lines).
- *    - Direct driving hogs microcontroller I/O pins and requires rapid manual multiplexing 
- *      in code to switch rows/cols faster than human vision persistence (~60Hz).
+ * --- THEORY & HARDWARE OVERVIEW ---
+ * 1. MAX7219 LED Driver:
+ *    An 8x8 LED matrix contains 64 individual LEDs. Controlling them directly would require 
+ *    16 microcontroller pins (8 rows + 8 columns). The MAX7219 IC acts as a multiplexed 
+ *    display driver that allows driving all 64 LEDs using only 3 digital control pins.
  * 
- * 2. THE MAX7219 DRIVER SOLUTION:
- *    - A specialized serial-input/parallel-output display driver chip.
- *    - Handles all 64 LEDs and internal refresh multiplexing in onboard static RAM.
- *    - Reduces the required Arduino microcontroller communication lines to just 3 pins.
+ * 2. Communication Protocol (SPI-like Serial Interface):
+ *    - DIN (Data In)   : Serial Data line. Transfers bits one-by-one into the MAX7219 shift register.
+ *    - CLK (Clock)     : Synchronizes data transmission. On every clock pulse, one bit is shifted in.
+ *    - CS / LOAD (Chip Select) : Latches data. When CS goes HIGH, data inside the shift register is loaded into the internal display RAM.
  * 
- * 3. SPI-LIKE 3-WIRE COMMUNICATION BUS:
- *    - DIN (Data In)  : Serial data line sending byte streams (MOSI).
- *    - CLK (Clock)    : Synchronizes bit timing between Arduino and MAX7219 (SCK).
- *    - CS  (Load/SS)  : Latch signal; toggling HIGH locks in received data packets.
- * 
- * 4. PIN CONNECTIONS FOR THIS SKETCH:
- *    +-------------------+--------------------+---------------------------------------+
- *    | MAX7219 Module Pin| Arduino Uno Pin    | Function Description                  |
- *    +-------------------+--------------------+---------------------------------------+
- *    | VCC               | 5V                 | 5V Operating Power (Power LEDs)       |
- *    | GND               | GND                | Common System Ground Reference        |
- *    | DIN (Data In)     | Digital Pin 4      | Transmits bitmap rows (Serial Data)   |
- *    | CS / LOAD         | Digital Pin 11     | Chip Select / Data Latch Trigger      |
- *    | CLK (Clock)       | Digital Pin 7      | Serial Data Synchronizing Clock       |
- *    +-------------------+--------------------+---------------------------------------+
- * 
- * 5. POWER CONSIDERATIONS & DAISY CHAINING:
- *    - Power Draw : Single matrix consumes ~100mA - 160mA at maximum brightness (safe for 5V pin).
- *    - Expansion  : Multiple matrices can be daisy-chained by linking DOUT -> DIN, CLK -> CLK, 
- *                   CS -> CS, VCC -> VCC, and GND -> GND. Use an external 5V supply if 
- *                   chaining 3+ modules to prevent brownouts.
- * 
- * 6. BITMASK GRAPHIC REPRESENTATION:
- *    - Each 8-bit byte represents 1 horizontal row (8 columns = 8 bits).
- *    - Binary '1' = LED ON  (Current flows through diode).
- *    - Binary '0' = LED OFF (No current).
- * =====================================================================================
+ * 3. Matrix Mapping & Binary Representation:
+ *    - Each row in an 8x8 matrix is controlled by an 8-bit byte.
+ *    - Binary prefix '0b' represents 8 LEDs across a single row:
+ *      '1' = LED ON (HIGH)  |  '0' = LED OFF (LOW)
+ * =======================================================================================
  */
 
-#include "LedControl.h" // Requires the "LedControl" library by Eberhard Fahle
+#include <LedControl.h> // Include library for handling MAX7219 / MAX7221 display drivers
 
-// Custom Digital Pin Assignments
-const int DIN_PIN = 4;  // Serial Data Input
-const int CS_PIN  = 11; // Chip Select / Latch
-const int CLK_PIN = 7;  // Serial Clock
+// --- PIN ASSIGNMENTS ---
+int d_in = 4; // Serial Data Input pin (DIN -> Microcontroller Pin 4)
+int clk  = 8; // Serial Clock pin (CLK -> Microcontroller Pin 8)
+int cs   = 7; // Chip Select / Latch pin (CS/LOAD -> Microcontroller Pin 7)
 
 /*
- * Initialize LedControl Object:
- * LedControl(dataPin, clockPin, csPin, numDevices)
- * Here: DIN=4, CLK=7, CS=11, Controlling 1 Matrix (Device Index 0)
+ * LedControl Object Initialization
+ * Syntax: LedControl(DataIn, CLK, CS, numDevices)
+ * - numDevices = 1: Defines how many MAX7219 ICs are daisy-chained together (1 to 8).
  */
-LedControl display = LedControl(DIN_PIN, CLK_PIN, CS_PIN, 1);
-
-// -------------------------------------------------------------------------------------
-// ANIMATION BITMAP PATTERNS (Concentric Shrinking Boxes)
-// -------------------------------------------------------------------------------------
-
-// Frame 1: Outer 8x8 Boundary Box
-const byte BOX_LARGE[8] = {
-  B11111111, // Row 0: All 8 LEDs ON
-  B10000001, // Row 1: Outer edges ON, middle 6 OFF
-  B10000001, // Row 2
-  B10000001, // Row 3
-  B10000001, // Row 4
-  B10000001, // Row 5
-  B10000001, // Row 6
-  B11111111  // Row 7: All 8 LEDs ON
-};
-
-// Frame 2: Middle 6x6 Box
-const byte BOX_MEDIUM[8] = {
-  B00000000, // Row 0: Fully OFF
-  B01111110, // Row 1: 6-LED line centered
-  B01000010, // Row 2
-  B01000010, // Row 3
-  B01000010, // Row 4
-  B01000010, // Row 5
-  B01111110, // Row 6
-  B00000000  // Row 7: Fully OFF
-};
-
-// Frame 3: Inner 4x4 Box
-const byte BOX_SMALL[8] = {
-  B00000000,
-  B00000000,
-  B00111100, // Row 2: 4-LED line centered
-  B00100100, // Row 3
-  B00100100, // Row 4
-  B00111100, // Row 5
-  B00000000,
-  B00000000
-};
-
-// Frame 4: Center 2x2 Core
-const byte BOX_DOT[8] = {
-  B00000000,
-  B00000000,
-  B00000000,
-  B00011000, // Row 3: Center 2 LEDs ON
-  B00011000, // Row 4: Center 2 LEDs ON
-  B00000000,
-  B00000000,
-  B00000000
-};
+LedControl lc = LedControl(d_in, clk, cs, 1);
 
 /*
- * HELPER FUNCTION: renderFrame
- * Takes a 1D array of 8 byte bitmasks and pushes them row-by-row
- * to Matrix Index 0 via SPI bit shift transfers.
+ * BITMAP ARRAY (8 bytes = 64 pixels total)
+ * Index [0] = Top Row (Row 0) down to Index [7] = Bottom Row (Row 7).
+ *
+ * Visual layout of the smiley pattern below:
+ *  Row 0: [1 1 1 1 1 1 1 1] -> Top Border
+ *  Row 1: [1 0 0 0 0 0 0 1] -> Side Borders
+ *  Row 2: [1 0 1 0 0 1 0 1] -> Eyes
+ *  Row 3: [1 0 0 0 0 0 0 1] -> Nose/Cheek Space
+ *  Row 4: [1 1 0 0 0 0 1 1] -> Mouth Edges
+ *  Row 5: [1 0 1 1 1 1 0 1] -> Smile Curve
+ *  Row 6: [1 0 0 0 0 0 0 1] -> Side Borders
+ *  Row 7: [1 1 1 1 1 1 1 1] -> Bottom Border
  */
-void renderFrame(const byte pattern[]) {
-  for (int row = 0; row < 8; row++) {
-    // display.setRow(deviceIndex, rowNumber, byteValue)
-    display.setRow(0, row, pattern[row]);
-  }
-}
+byte smiley[8] = {
+  0b11111111, // Row 0
+  0b10000001, // Row 1
+  0b10100101, // Row 2
+  0b10000001, // Row 3
+  0b11000011, // Row 4
+  0b10111101, // Row 5
+  0b10000001, // Row 6
+  0b11111111  // Row 7
+};
 
 void setup() {
   /*
-   * MAX7219 INITIALIZATION SEQUENCE:
-   * 1. Wake up driver from hardware low-power shutdown mode (default on startup).
-   * 2. Set LED brightness intensity (0 = minimum/dim, 15 = maximum brightness).
-   * 3. Clear existing display memory buffer.
+   * POWER-SAVING MODE (Shutdown Register):
+   * Upon startup, the MAX7219 enters Power Shutdown Mode by default to save energy.
+   * Parameter 1: Device address (0 for the 1st matrix).
+   * Parameter 2: 'false' disables shutdown mode (wakes up the display).
    */
-  display.shutdown(0, false); // Device 0: false = Normal Operation Mode
-  display.setIntensity(0, 5); // Device 0: Brightness Level 5 out of 15
-  display.clearDisplay(0);    // Device 0: Flush row RAM registers
+  lc.shutdown(0, false);
+
+  /*
+   * BRIGHTNESS CONTROL (Intensity Register):
+   * The MAX7219 uses internal Pulse-Width Modulation (PWM) to adjust display brightness.
+   * Parameter 1: Device address (0).
+   * Parameter 2: Brightness level from 0 (minimum intensity) to 15 (maximum intensity).
+   */
+  lc.setIntensity(0, 8);
+
+  /*
+   * DISPLAY CLEARING:
+   * Flushes all display RAM registers inside the MAX7219 to turn off all 64 LEDs,
+   * preventing leftover garbage data from displaying on boot.
+   */
+  lc.clearDisplay(0);
 }
 
 void loop() {
   /*
-   * ANIMATION LOOP:
-   * Sequentially renders 4 collapsing frame bitmaps with 150ms delays,
-   * creating a smooth repeating shrinking box visual effect.
+   * MATRIX UPDATE LOOP:
+   * Iterates through rows 0 to 7, writing each byte from the 'smiley' array 
+   * into the corresponding row register of the MAX7219 display driver.
+   * 
+   * Function: lc.setRow(deviceIndex, rowIndex, byteValue)
+   * - deviceIndex = 0 (1st matrix)
+   * - rowIndex    = i (0 through 7)
+   * - byteValue   = smiley[i] (8-bit binary pattern for row 'i')
    */
-  renderFrame(BOX_LARGE);
-  delay(150);
-  
-  renderFrame(BOX_MEDIUM);
-  delay(150);
-  
-  renderFrame(BOX_SMALL);
-  delay(150);
-  
-  renderFrame(BOX_DOT);
-  delay(150);
+  for (int i = 0; i < 8; i++) {
+    lc.setRow(0, i, smiley[i]);
+  }
 }
